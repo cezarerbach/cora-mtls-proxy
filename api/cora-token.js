@@ -1,74 +1,48 @@
-const https = require('https');
-const querystring = require('querystring');
+import fetch from 'node-fetch';
 
-module.exports = async (req, res) => {
-  try {
-    // 1. Validar API Key
+export default async function handler(req, res) {
+    // Validar chave de API
     const apiKey = req.headers['x-base44-api-key'];
     const expectedKey = process.env.BASE44_INTERMEDIARY_KEY;
 
     if (!apiKey || apiKey !== expectedKey) {
-      return res.status(401).json({ error: 'Unauthorized: Invalid or missing API key' });
+        return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    // 2. Obter credenciais da Cora
-    const clientId = process.env.CORA_CLIENT_ID;
-    const certificate = process.env.CORA_CERTIFICATE;
-    const privateKey = process.env.CORA_PRIVATE_KEY;
-
-    if (!clientId || !certificate || !privateKey) {
-      return res.status(500).json({ error: 'Missing Cora credentials' });
+    if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method not allowed' });
     }
 
-    const tokenUrl = 'https://matls-clients.api.stage.cora.com.br/token';
-    
-    const postData = querystring.stringify({
-      grant_type: 'client_credentials',
-      client_id: clientId
-    });
+    try {
+        const clientId = process.env.CORA_CLIENT_ID;
+        const certificate = process.env.CORA_CERTIFICATE;
+        const privateKey = process.env.CORA_PRIVATE_KEY;
 
-    const options = {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Content-Length': Buffer.byteLength(postData.toString())
-      },
-      cert: certificate,
-      key: privateKey,
-    };
+        if (!clientId || !certificate || !privateKey) {
+            return res.status(500).json({ error: 'Missing Cora credentials' });
+        }
 
-    // 3. Fazer a requisição mTLS para a Cora
-    const coraResponse = await new Promise((resolve, reject) => {
-      const request = https.request(tokenUrl, options, (coraRes) => {
-        let data = '';
-        coraRes.on('data', (chunk) => data += chunk);
-        coraRes.on('end', () => {
-          try {
-            resolve({ statusCode: coraRes.statusCode, data: JSON.parse(data) });
-          } catch (e) {
-            reject(new Error(`Failed to parse Cora response: ${data}`));
-          }
+        const response = await fetch('https://matls-clients.api.stage.cora.com.br/token', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: `grant_type=client_credentials&client_id=${clientId}`,
+            agent: new (await import('https')).Agent({
+                cert: certificate,
+                key: privateKey,
+            })
         });
-      });
 
-      request.on('error', (e) => reject(e));
-      request.write(postData.toString());
-      request.end();
-    });
+        if (!response.ok) {
+            const errorText = await response.text();
+            return res.status(response.status).json({ error: errorText });
+        }
 
-    // 4. Retornar a resposta da Cora
-    if (coraResponse.statusCode !== 200) {
-      console.error('Error from Cora API:', coraResponse.data);
-      return res.status(coraResponse.statusCode).json({
-        error: 'Failed to get token from Cora API.',
-        details: coraResponse.data
-      });
+        const data = await response.json();
+        return res.status(200).json(data);
+
+    } catch (error) {
+        return res.status(500).json({ error: error.message });
     }
-
-    res.status(200).json(coraResponse.data);
-
-  } catch (error) {
-    console.error('Vercel Function Error:', error);
-    res.status(500).json({ error: error.message || 'Internal server error.' });
-  }
-};
+}
