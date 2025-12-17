@@ -1,31 +1,28 @@
-// api/cora-token.js
+const https = require('https');
+const querystring = require('querystring');
 
-import https from 'https';
-import { URLSearchParams } from 'url';
-
-// A função exportada será o handler da sua função serverless do Vercel
-export default async (req, res) => {
-  // 1. Validação de segurança (opcional, mas altamente recomendado)
-  // Use um secret que apenas seu backend Base44 conhecerá
-  const BASE44_INTERMEDIARY_KEY = process.env.BASE44_INTERMEDIARY_KEY;
-  const requestApiKey = req.headers['x-base44-api-key'];
-
-  if (!BASE44_INTERMEDIARY_KEY || requestApiKey !== BASE44_INTERMEDIARY_KEY) {
-    return res.status(401).json({ error: 'Unauthorized: Invalid or missing API key.' });
-  }
-
-  // 2. Carregar Credenciais da Cora (do ambiente do Vercel)
-  const clientId = process.env.CORA_CLIENT_ID;
-  const certificate = process.env.CORA_CERTIFICATE;
-  const privateKey = process.env.CORA_PRIVATE_KEY;
-
-  if (!clientId || !certificate || !privateKey) {
-    return res.status(500).json({ error: 'Cora credentials (CLIENT_ID, CERTIFICATE, PRIVATE_KEY) not configured on Vercel.' });
-  }
-
+module.exports = async (req, res) => {
   try {
-    const tokenUrl = new URL("https://matls-auth.api.stage.cora.com.br/token");
-    const postData = new URLSearchParams({
+    // 1. Validar API Key
+    const apiKey = req.headers['x-base44-api-key'];
+    const expectedKey = process.env.BASE44_INTERMEDIARY_KEY;
+
+    if (!apiKey || apiKey !== expectedKey) {
+      return res.status(401).json({ error: 'Unauthorized: Invalid or missing API key' });
+    }
+
+    // 2. Obter credenciais da Cora
+    const clientId = process.env.CORA_CLIENT_ID;
+    const certificate = process.env.CORA_CERTIFICATE;
+    const privateKey = process.env.CORA_PRIVATE_KEY;
+
+    if (!clientId || !certificate || !privateKey) {
+      return res.status(500).json({ error: 'Missing Cora credentials' });
+    }
+
+    const tokenUrl = 'https://matls-clients.api.stage.cora.com.br/token';
+    
+    const postData = querystring.stringify({
       grant_type: 'client_credentials',
       client_id: clientId
     });
@@ -36,7 +33,6 @@ export default async (req, res) => {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Content-Length': Buffer.byteLength(postData.toString())
       },
-      // Configurações mTLS
       cert: certificate,
       key: privateKey,
     };
@@ -55,8 +51,7 @@ export default async (req, res) => {
         });
       });
 
-      request.on('error', (e) => reject(e)); // Lidar com erros de rede ou SSL/TLS
-
+      request.on('error', (e) => reject(e));
       request.write(postData.toString());
       request.end();
     });
