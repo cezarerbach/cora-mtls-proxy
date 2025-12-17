@@ -1,4 +1,4 @@
-import fetch from 'node-fetch';
+import https from 'https';
 
 export default async function handler(req, res) {
     // Validar chave de API
@@ -22,16 +22,19 @@ export default async function handler(req, res) {
             return res.status(500).json({ error: 'Missing Cora credentials' });
         }
 
+        // Criar agent com mTLS
+        const agent = new https.Agent({
+            cert: certificate,
+            key: privateKey,
+        });
+
         const response = await fetch('https://matls-clients.api.stage.cora.com.br/token', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
             },
             body: `grant_type=client_credentials&client_id=${clientId}`,
-            agent: new (await import('https')).Agent({
-                cert: certificate,
-                key: privateKey,
-            })
+            agent: agent
         });
 
         if (!response.ok) {
