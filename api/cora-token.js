@@ -1,4 +1,6 @@
 import https from 'https';
+import fs from 'fs';
+import path from 'path';
 
 export default async function handler(req, res) {
     const apiKey = req.headers['x-base44-api-key'];
@@ -14,16 +16,10 @@ export default async function handler(req, res) {
 
     try {
         const clientId = process.env.CORA_CLIENT_ID;
-        let certificate = process.env.CORA_CERTIFICATE;
-        let privateKey = process.env.CORA_PRIVATE_KEY;
-
-        if (!clientId || !certificate || !privateKey) {
-            return res.status(500).json({ error: 'Missing Cora credentials' });
-        }
-
-        // Garantir quebras de linha corretas
-        certificate = certificate.replace(/\\n/g, '\n');
-        privateKey = privateKey.replace(/\\n/g, '\n');
+        
+        // Ler certificados dos arquivos
+        const certificate = fs.readFileSync(path.join(process.cwd(), 'api/certs/certificate.pem'), 'utf8');
+        const privateKey = fs.readFileSync(path.join(process.cwd(), 'api/certs/private-key.key'), 'utf8');
 
         const agent = new https.Agent({
             cert: certificate,
