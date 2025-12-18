@@ -1,7 +1,6 @@
 import https from 'https';
 
 export default async function handler(req, res) {
-    // Validar chave de API
     const apiKey = req.headers['x-base44-api-key'];
     const expectedKey = process.env.BASE44_INTERMEDIARY_KEY;
 
@@ -18,11 +17,14 @@ export default async function handler(req, res) {
         const certificate = process.env.CORA_CERTIFICATE;
         const privateKey = process.env.CORA_PRIVATE_KEY;
 
+        console.log('Client ID:', clientId?.substring(0, 10) + '...');
+        console.log('Certificate length:', certificate?.length);
+        console.log('Private key length:', privateKey?.length);
+
         if (!clientId || !certificate || !privateKey) {
             return res.status(500).json({ error: 'Missing Cora credentials' });
         }
 
-        // Criar agent com mTLS
         const agent = new https.Agent({
             cert: certificate,
             key: privateKey,
@@ -37,15 +39,17 @@ export default async function handler(req, res) {
             agent: agent
         });
 
+        const responseText = await response.text();
+        console.log('Cora response:', response.status, responseText);
+
         if (!response.ok) {
-            const errorText = await response.text();
-            return res.status(response.status).json({ error: errorText });
+            return res.status(response.status).json({ error: responseText });
         }
 
-        const data = await response.json();
-        return res.status(200).json(data);
+        return res.status(200).json(JSON.parse(responseText));
 
     } catch (error) {
+        console.error('Error:', error);
         return res.status(500).json({ error: error.message });
     }
 }
