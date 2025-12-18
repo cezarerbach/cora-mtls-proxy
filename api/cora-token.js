@@ -14,16 +14,16 @@ export default async function handler(req, res) {
 
     try {
         const clientId = process.env.CORA_CLIENT_ID;
-        const certificate = process.env.CORA_CERTIFICATE;
-        const privateKey = process.env.CORA_PRIVATE_KEY;
-
-        console.log('Client ID:', clientId?.substring(0, 10) + '...');
-        console.log('Certificate length:', certificate?.length);
-        console.log('Private key length:', privateKey?.length);
+        let certificate = process.env.CORA_CERTIFICATE;
+        let privateKey = process.env.CORA_PRIVATE_KEY;
 
         if (!clientId || !certificate || !privateKey) {
             return res.status(500).json({ error: 'Missing Cora credentials' });
         }
+
+        // Garantir quebras de linha corretas
+        certificate = certificate.replace(/\\n/g, '\n');
+        privateKey = privateKey.replace(/\\n/g, '\n');
 
         const agent = new https.Agent({
             cert: certificate,
@@ -40,7 +40,6 @@ export default async function handler(req, res) {
         });
 
         const responseText = await response.text();
-        console.log('Cora response:', response.status, responseText);
 
         if (!response.ok) {
             return res.status(response.status).json({ error: responseText });
@@ -49,7 +48,6 @@ export default async function handler(req, res) {
         return res.status(200).json(JSON.parse(responseText));
 
     } catch (error) {
-        console.error('Error:', error);
         return res.status(500).json({ error: error.message });
     }
 }
