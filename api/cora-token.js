@@ -1,6 +1,4 @@
 import https from 'https';
-import fs from 'fs';
-import path from 'path';
 
 export default async function handler(req, res) {
     const apiKey = req.headers['x-base44-api-key'];
@@ -17,9 +15,9 @@ export default async function handler(req, res) {
     try {
         const clientId = process.env.CORA_CLIENT_ID;
         
-        // Ler certificados dos arquivos
-        const certificate = fs.readFileSync(path.join(process.cwd(), 'api/certs/certificate.pem'), 'utf8');
-        const privateKey = fs.readFileSync(path.join(process.cwd(), 'api/certs/private-key.key'), 'utf8');
+        // Decodificar certificados de Base64
+        const certificate = Buffer.from(process.env.CORA_CERTIFICATE_BASE64, 'base64').toString('utf8');
+        const privateKey = Buffer.from(process.env.CORA_PRIVATE_KEY_BASE64, 'base64').toString('utf8');
 
         const agent = new https.Agent({
             cert: certificate,
