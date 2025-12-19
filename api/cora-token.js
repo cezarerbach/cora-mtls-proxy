@@ -1,18 +1,31 @@
-import fs from "fs";
 import https from "https";
 import axios from "axios";
 
-export async function gerarToken() {
+/**
+ * Gera token OAuth2 via mTLS (Vercel)
+ */
+export default async function handler(req, res) {
   try {
+    if (
+      !process.env.CORA_CERTIFICATE ||
+      !process.env.CORA_PRIVATE_KEY ||
+      !process.env.CORA_CLIENT_ID
+    ) {
+      return res.status(500).json({
+        success: false,
+        error: "Variáveis de ambiente não configuradas"
+      });
+    }
+
     const httpsAgent = new https.Agent({
-      cert: fs.readFileSync("/Users/Cezar Erbach/Documents/cert_key_cora/certificate.pem"),
-      key: fs.readFileSync("/Users/Cezar Erbach/Documents/cert_key_cora/private-key.key"),
+      cert: process.env.CORA_CERTIFICATE.replace(/\\n/g, "\n"),
+      key: process.env.CORA_PRIVATE_KEY.replace(/\\n/g, "\n"),
       rejectUnauthorized: true
     });
 
     const body = new URLSearchParams({
       grant_type: "client_credentials",
-      client_id: "int-3Tm0ksVhvjxPI3JzglU95t"
+      client_id: process.env.CORA_CLIENT_ID
     }).toString();
 
     const response = await axios.post(
@@ -23,21 +36,22 @@ export async function gerarToken() {
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
           "Accept": "application/json"
-        }
+        },
+        timeout: 10000
       }
     );
 
-    return {
+    return res.status(200).json({
       success: true,
-      status: response.status,
-      data: response.data
-    };
+      token: response.data
+    });
 
   } catch (error) {
-    return {
+    return res.status(error.response?.status || 500).json({
       success: false,
-      status: error.response?.status || 500,
-      error: error.response?.data || error.message
-    };
+      error: error.response?.data || {
+        message: error.message
+      }
+    });
   }
 }
