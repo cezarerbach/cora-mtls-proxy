@@ -5,8 +5,8 @@ import axios from "axios";
 export async function gerarToken() {
   try {
     const httpsAgent = new https.Agent({
-      cert: fs.readFileSync("/d:/cert_key-cora/certificate.pem"),
-      key: fs.readFileSync("/d:/cert_key-cora/private-key.key"),
+      cert: fs.readFileSync("/Users/Cezar Erbach/Documents/cert_key_cora/certificate.pem"),
+      key: fs.readFileSync("/Users/Cezar Erbach/Documents/cert_key_cora/private-key.key"),
       rejectUnauthorized: true
     });
 
