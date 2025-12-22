@@ -2,47 +2,83 @@ import https from "https";
 
 export default async function handler(req, res) {
   try {
+    // ==========================
+    // Leitura das variáveis
+    // ==========================
     const cert = process.env.CORA_CERTIFICATE?.replace(/\\n/g, "\n");
     const key = process.env.CORA_PRIVATE_KEY?.replace(/\\n/g, "\n");
     const clientId = process.env.CORA_CLIENT_ID;
 
     // ==========================
-    // DEBUG SEGURO – PASSO 2
+    // Validação do certificado
     // ==========================
-    console.log("CORA DEBUG", {
+    const certStartsOk = cert?.startsWith("-----BEGIN CERTIFICATE-----");
+    const certEndsOk = cert?.trim().endsWith("-----END CERTIFICATE-----");
+
+    // ==========================
+    // Validação da chave privada
+    // ==========================
+    const keyStartsOk =
+      key?.startsWith("-----BEGIN RSA PRIVATE KEY-----") ||
+      key?.startsWith("-----BEGIN PRIVATE KEY-----");
+
+    const keyEndsOk =
+      key?.trim().endsWith("-----END RSA PRIVATE KEY-----") ||
+      key?.trim().endsWith("-----END PRIVATE KEY-----");
+
+    // ==========================
+    // DEBUG SEGURO
+    // ==========================
+    console.log("CORA FINAL VALIDATION", {
       clientIdPresent: !!clientId,
-      clientIdValue: clientId || null, // seguro
-      certStartsOk: cert?.startsWith("-----BEGIN CERTIFICATE-----") || false,
-      certEndsOk: cert?.trim().endsWith("-----END CERTIFICATE-----") || false,
-      keyStartsOk: key?.startsWith("-----BEGIN PRIVATE KEY-----") || false,
-      keyEndsOk: key?.trim().endsWith("-----END PRIVATE KEY-----") || false,
+      certStartsOk,
+      certEndsOk,
+      keyStartsOk,
+      keyEndsOk,
+      certFirstLine: cert?.split("\n")[0] || null,
+      certLastLine: cert?.trim().split("\n").slice(-1)[0] || null,
+      keyFirstLine: key?.split("\n")[0] || null,
+      keyLastLine: key?.trim().split("\n").slice(-1)[0] || null,
       certLength: cert?.length || 0,
       keyLength: key?.length || 0,
       nodeVersion: process.version
     });
 
-    if (!cert || !key || !clientId) {
-      return res.status(500).json({
-        success: false,
-        error: "Variáveis de ambiente ausentes"
-      });
+    // ==========================
+    // Interrompe se inválido
+    // ==========================
+    if (!clientId) {
+      throw new Error("CORA_CLIENT_ID não configurado");
     }
 
+    if (!certStartsOk || !certEndsOk) {
+      throw new Error("Certificado PEM inválido ou mal formatado");
+    }
+
+    if (!keyStartsOk || !keyEndsOk) {
+      throw new Error("Chave privada RSA inválida ou mal formatada");
+    }
+
+    // ==========================
+    // Cria o agente mTLS
+    // ==========================
     const httpsAgent = new https.Agent({
       cert,
       key,
       rejectUnauthorized: true
     });
 
-    const bodyObj = {
+    // ==========================
+    // Monta o body OAuth2
+    // ==========================
+    const body = new URLSearchParams({
       grant_type: "client_credentials",
       client_id: clientId
-    };
+    }).toString();
 
-    console.log("BODY ENVIADO", bodyObj);
-
-    const body = new URLSearchParams(bodyObj).toString();
-
+    // ==========================
+    // Chamada à Cora
+    // ==========================
     const response = await fetch(
       "https://matls-clients.api.stage.cora.com.br/token",
       {
@@ -59,7 +95,7 @@ export default async function handler(req, res) {
     const data = await response.json();
 
     if (!response.ok) {
-      console.log("CORA ERROR RESPONSE", data);
+      console.log("CORA RESPONSE ERROR", data);
 
       return res.status(response.status).json({
         success: false,
@@ -67,13 +103,16 @@ export default async function handler(req, res) {
       });
     }
 
+    // ==========================
+    // Sucesso
+    // ==========================
     return res.status(200).json({
       success: true,
       token: data
     });
 
   } catch (error) {
-    console.error("MTLS EXCEPTION", error);
+    console.error("CORA TOKEN ERROR", error.message);
 
     return res.status(500).json({
       success: false,
