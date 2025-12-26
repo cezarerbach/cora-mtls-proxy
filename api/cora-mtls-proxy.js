@@ -1,20 +1,16 @@
-import { Agent } from 'undici';
+import { Agent, request } from 'undici';
 
 function normalizePem(pem) {
-  if (!pem) return null;
-  return pem.replace(/\\n/g, '\n').trim();
+  return pem?.replace(/\\n/g, '\n').trim();
 }
 
 export default async function handler(req, res) {
   try {
     /* =========================
-       🔐 Proxy authentication
+       🔐 Auth do proxy
        ========================= */
-    const apiKey =
-      req.headers['x-base44-api-key'] ||
-      req.headers['X-Base44-Api-Key'];
-
-    if (!apiKey || apiKey !== process.env.BASE44_INTERMEDIARY_KEY) {
+    const apiKey = req.headers['x-base44-api-key'];
+    if (apiKey !== process.env.BASE44_INTERMEDIARY_KEY) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
@@ -26,7 +22,6 @@ export default async function handler(req, res) {
        📦 Payload
        ========================= */
     const { url, method, headers = {}, body } = req.body || {};
-
     if (!url || !method) {
       return res.status(400).json({
         error: 'Payload inválido. Campos obrigatórios: url, method'
@@ -34,7 +29,7 @@ export default async function handler(req, res) {
     }
 
     /* =========================
-       🔑 mTLS certificates
+       🔑 Certificados mTLS
        ========================= */
     const cert = normalizePem(process.env.CORA_CERTIFICATE);
     const key = normalizePem(process.env.CORA_PRIVATE_KEY);
@@ -59,16 +54,16 @@ export default async function handler(req, res) {
     });
 
     /* =========================
-       🚀 Forward real
+       🚀 Request REAL
        ========================= */
-    const response = await fetch(url, {
+    const { statusCode, body: resBody } = await request(url, {
       method,
       headers,
       body,
       dispatcher
     });
 
-    const raw = await response.text();
+    const raw = await resBody.text();
 
     let parsed;
     try {
@@ -77,7 +72,7 @@ export default async function handler(req, res) {
       parsed = raw;
     }
 
-    return res.status(response.status).json(parsed);
+    return res.status(statusCode).json(parsed);
 
   } catch (err) {
     console.error('CORA MTLS PROXY ERROR', err);
