@@ -1,68 +1,41 @@
 import https from "https";
 
-function normalizePem(pem) {
-  return pem.replace(/\\n/g, "\n").replace(/\r/g, "").trim();
-}
-
 export default async function handler(req, res) {
-  // Apenas log para ver se a requisição chegou
+  // 1️⃣ Log inicial
   console.log("Requisição recebida no cora-invoices");
+  console.log("Método:", req.method);
 
-  const authHeader = req.headers["authorization"];
-  if (!authHeader) {
-    console.warn("Authorization header ausente");
+  // 2️⃣ Validação do header x-base44-api-key
+  const receivedApiKey = req.headers["x-base44-api-key"] || null;
+  const envApiKey = process.env.BASE44_INTERMEDIARY_KEY || null;
+
+  console.log("x-base44-api-key recebido:", receivedApiKey);
+  console.log("BASE44_INTERMEDIARY_KEY do ambiente:", envApiKey);
+
+  if (!receivedApiKey || receivedApiKey !== envApiKey) {
+    console.warn("API Key inválida ou ausente");
+    return res.status(401).json({ error: "unauthorized" });
   }
 
-  const cert = normalizePem(process.env.CORA_CERTIFICATE);
-  const key  = normalizePem(process.env.CORA_PRIVATE_KEY);
+  // 3️⃣ Log do Authorization header
+  const authHeader = req.headers["authorization"] || null;
+  console.log("Authorization header:", authHeader);
 
-  if (!cert || !key) {
-    return res.status(500).json({ error: "mtls_not_configured" });
-  }
-
-  const agent = new https.Agent({
-    cert,
-    key,
-    rejectUnauthorized: true,
-  });
-
+  // 4️⃣ Log do payload (JSON)
+  let payload;
   try {
-    const response = await fetch(
-      "https://api.stage.cora.com.br/v2/invoices",
-      {
-        method: "POST",
-        agent,
-        headers: {
-          "Authorization": authHeader || "",
-          "Content-Type": "application/json",
-          "Idempotency-Key": req.headers["idempotency-key"] || "test-key",
-        },
-        body: JSON.stringify(req.body),
-      }
-    );
-
-    const responseText = await response.text();
-    let responseBody;
-
-    try {
-      responseBody = JSON.parse(responseText);
-    } catch {
-      responseBody = responseText;
-    }
-
-    if (!response.ok) {
-      return res.status(response.status).json({
-        error: "cora_error",
-        details: responseBody,
-      });
-    }
-
-    return res.status(201).json(responseBody);
-
+    payload = await req.json();
+    console.log("Payload recebido:", payload);
   } catch (err) {
-    return res.status(500).json({
-      error: "internal_error",
-      message: err.message,
-    });
+    console.error("Erro ao parsear JSON:", err.message);
+    return res.status(400).json({ error: "invalid_json", details: err.message });
   }
+
+  // 5️⃣ Resposta temporária de teste
+  return res.status(200).json({
+    message: "Autenticação OK, logs gravados",
+    receivedApiKey,
+    authHeader,
+    payload,
+  });
 }
