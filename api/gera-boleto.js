@@ -1,80 +1,146 @@
+import https from 'https';
+
+/**
+ * Normaliza PEM vindo de env var
+ */
+function normalizePem(pem) {
+    if (!pem) return null;
+    return pem.replace(/\\n/g, '\n').trim();
+}
+
 export default async function handler(req, res) {
+    /**
+     * ===============================
+     * CORS / PREFLIGHT
+     * ===============================
+     */
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader(
+        'Access-Control-Allow-Headers',
+        'Content-Type, Authorization, Idempotency-Key, x-base44-api-key'
+    );
+    res.setHeader(
+        'Access-Control-Allow-Methods',
+        'POST, OPTIONS'
+    );
+
+    if (req.method === 'OPTIONS') {
+        return res.status(204).end();
+    }
+
+    /**
+     * ===============================
+     * METHOD VALIDATION
+     * ===============================
+     */
+    if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method not allowed' });
+    }
+
+    /**
+     * ===============================
+     * INTERMEDIARY AUTH (Base44)
+     * ===============================
+     */
+    const apiKey =
+        req.headers['x-base44-api-key'] ||
+        req.headers['x-base44-api-key'.toLowerCase()];
+
+    if (!apiKey || apiKey !== process.env.BASE44_INTERMEDIARY_KEY) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    /**
+     * ===============================
+     * AUTHORIZATION TOKEN
+     * ===============================
+     */
+    const authHeader = req.headers['authorization'];
+    if (!authHeader?.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'Missing or invalid Authorization header' });
+    }
+
+    const accessToken = authHeader.replace('Bearer ', '').trim();
+    const idempotencyKey = req.headers['idempotency-key'];
+
+    if (!idempotencyKey) {
+        return res.status(400).json({ error: 'Missing Idempotency-Key header' });
+    }
+
+    /**
+     * ===============================
+     * CERTIFICATES (mTLS)
+     * ===============================
+     */
+    const certificate = normalizePem(process.env.CORA_CERTIFICATE);
+    const privateKey = normalizePem(process.env.CORA_PRIVATE_KEY);
+
+    if (!certificate || !privateKey) {
+        return res.status(500).json({
+            error: 'mTLS certificate or private key not configured'
+        });
+    }
+
+    const httpsAgent = new https.Agent({
+        cert: certificate,
+        key: privateKey,
+        rejectUnauthorized: true
+    });
+
+    /**
+     * ===============================
+     * REQUEST BODY
+     * ===============================
+     */
+    let boletoData;
     try {
-        console.log('=== DEBUG START ===');
-        console.log('Request method:', req.method);
-        console.log('All headers:', JSON.stringify(req.headers, null, 2));
-        console.log('x-base44-api-key header:', req.headers['x-base44-api-key']);
-        console.log('BASE44_INTERMEDIARY_KEY env:', process.env.BASE44_INTERMEDIARY_KEY);
-        console.log('Keys match:', req.headers['x-base44-api-key'] === process.env.BASE44_INTERMEDIARY_KEY);
-        
-        // Validar autenticação
-        // Validar autenticação
-        const apiKey = req.headers['x-base44-api-key'] || req.headers['X-Base44-Api-Key'];
-        
-        if (!apiKey || apiKey !== process.env.BASE44_INTERMEDIARY_KEY) {
-            console.error('UNAUTHORIZED: apiKey present?', !!apiKey, 'env key present?', !!process.env.BASE44_INTERMEDIARY_KEY);
-            return res.status(401).json({ 
-                error: 'Unauthorized',
-                debug: {
-                    hasHeaderKey: !!apiKey,
-                    hasEnvKey: !!process.env.BASE44_INTERMEDIARY_KEY,
-                    headerKeyLength: apiKey?.length,
-                    envKeyLength: process.env.BASE44_INTERMEDIARY_KEY?.length
-                }
+        boletoData = req.body;
+    } catch {
+        return res.status(400).json({ error: 'Invalid JSON body' });
+    }
+
+    /**
+     * ===============================
+     * CALL CORA API
+     * ===============================
+     */
+    try {
+        const coraResponse = await fetch(
+            'https://matls-clients.api.stage.cora.com.br/v2/invoices',
+            {
+                method: 'POST',
+                agent: httpsAgent,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Idempotency-Key': idempotencyKey
+                },
+                body: JSON.stringify(boletoData)
+            }
+        );
+
+        const responseText = await coraResponse.text();
+        let responseJson;
+
+        try {
+            responseJson = JSON.parse(responseText);
+        } catch {
+            responseJson = { raw: responseText };
+        }
+
+        if (!coraResponse.ok) {
+            return res.status(coraResponse.status).json({
+                error: 'Cora API error',
+                details: responseJson
             });
         }
 
-        console.log('Auth passed, proceeding...');
+        return res.status(200).json(responseJson);
 
-        // Função para normalizar PEM
-        function normalizePem(pem) {
-            return pem
-                .replace(/\\n/g, '\n')
-                .replace(/-----BEGIN [A-Z\s]+-----\s*/g, (match) => match.trim() + '\n')
-                .replace(/\s*-----END [A-Z\s]+-----/g, (match) => '\n' + match.trim());
-        }
-
-        // Obter certificados das variáveis de ambiente
-        console.log('Loading certificates...');
-        const cert = normalizePem(process.env.CORA_CERTIFICATE);
-        const key = normalizePem(process.env.CORA_PRIVATE_KEY);
-        console.log('Cert length:', cert?.length, 'Key length:', key?.length);
-
-        const https = await import('https');
-        const fetch = (await import('node-fetch')).default;
-
-        const agent = new https.Agent({
-            cert: cert,
-            key: key,
-            rejectUnauthorized: false
-        });
-
-        console.log('Calling Cora API...');
-        // Fazer requisição para Cora
-        const coraResponse = await fetch('https://matls-stage.cora.com.br/invoice', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': req.headers.authorization,
-                'Idempotency-Key': req.headers['idempotency-key']
-            },
-            body: JSON.stringify(req.body),
-            agent: agent
-        });
-
-        console.log('Cora response status:', coraResponse.status);
-        const data = await coraResponse.json();
-        console.log('Cora response data:', JSON.stringify(data, null, 2));
-
-        return res.status(coraResponse.status).json(data);
-
-    } catch (error) {
-        console.error('=== ERROR ===');
-        console.error('Error message:', error.message);
-        console.error('Error stack:', error.stack);
-        return res.status(500).json({ 
-            error: error.message,
-            stack: error.stack 
+    } catch (err) {
+        return res.status(500).json({
+            error: 'Internal proxy error',
+            message: err.message
         });
     }
 }
