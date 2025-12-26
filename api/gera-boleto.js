@@ -11,7 +11,7 @@ export default async function handler(req, res) {
             error: 'Unauthorized',
             hasKey: !!apiKey,
             hasEnvKey: !!process.env.BASE44_INTERMEDIARY_KEY
-        });
+        }
     }
 
     if (req.method !== 'POST') {
