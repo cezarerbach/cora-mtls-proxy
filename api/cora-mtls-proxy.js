@@ -1,4 +1,4 @@
-import https from 'https';
+import { Agent } from 'undici';
 
 /**
  * Normaliza PEM vindo de env
@@ -8,9 +8,6 @@ function normalizePem(pem) {
   return pem.replace(/\\n/g, '\n').trim();
 }
 
-/**
- * Validação básica de payload
- */
 function validatePayload(payload) {
   if (!payload) return 'Payload ausente';
   if (!payload.url) return 'Campo obrigatório: url';
@@ -44,12 +41,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: validationError });
     }
 
-    const {
-      url,
-      method,
-      headers = {},
-      body
-    } = payload;
+    const { url, method, headers = {}, body } = payload;
 
     /* =========================
        🔑 Certificados mTLS
@@ -63,19 +55,49 @@ export default async function handler(req, res) {
       });
     }
 
-    const httpsAgent = new https.Agent({
-      cert: certificate,
-      key: privateKey,
-      rejectUnauthorized: true
+    /**
+     * 🚨 ESTE É O PONTO CRÍTICO
+     * mTLS FUNCIONA SOMENTE COM dispatcher (undici)
+     */
+    const dispatcher = new Agent({
+      connect: {
+        cert: certificate,
+        key: privateKey,
+        rejectUnauthorized: true
+      }
     });
 
     /* =========================
-       🧾 Body handling (CRÍTICO)
+       🧾 Body handling
        ========================= */
-    let outgoingBody;
+    let outgoingBody = body;
 
-    if (body !== undefined && body !== null) {
-      const contentType =
-        headers['Content-Type'] ||
-        headers['content-type'] ||
-        '';
+    /* =========================
+       🚀 Forward mTLS REAL
+       ========================= */
+    const response = await fetch(url, {
+      method,
+      headers,
+      body: outgoingBody,
+      dispatcher   // 👈 ESSENCIAL
+    });
+
+    const text = await response.text();
+
+    let responsePayload;
+    try {
+      responsePayload = JSON.parse(text);
+    } catch {
+      responsePayload = text;
+    }
+
+    return res.status(response.status).json(responsePayload);
+
+  } catch (error) {
+    console.error('CORA MTLS PROXY ERROR:', error);
+    return res.status(500).json({
+      error: 'Erro interno no proxy mTLS',
+      message: error.message
+    });
+  }
+}
