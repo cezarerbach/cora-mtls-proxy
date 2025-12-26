@@ -3,7 +3,7 @@ export default async function handler(req, res) {
  //   const apiKey = req.headers['x-base44-api-key'];
   //  if (!apiKey || apiKey !== process.env.BASE44_INTERMEDIARY_KEY) {
    //     return res.status(401).json({ error: 'Unauthorized' });
-    }
+  //  }
 
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method not allowed' });
