@@ -1,38 +1,68 @@
 import https from "https";
 
-export default async function handler(req, res) {
-  // --- LOGS TEMPORÁRIOS PARA DEPURAÇÃO ---
-  console.log("Recebido x-base44-api-key:", req.headers["x-base44-api-key"]);
-  console.log("Recebido Authorization:", req.headers["authorization"]);
-  console.log("Recebido Idempotency-Key:", req.headers["idempotency-key"]);
-  console.log("Payload recebido:", req.body);
+function normalizePem(pem) {
+  return pem.replace(/\\n/g, "\n").replace(/\r/g, "").trim();
+}
 
-  // --- CHECAGEM SIMPLES DO API KEY ---
-  const expectedKey = process.env.BASE44_INTERMEDIARY_KEY;
-  const receivedKey = req.headers["x-base44-api-key"];
-  if (!receivedKey || receivedKey !== expectedKey) {
-    return res.status(401).json({
-      error: "unauthorized",
-      message: "x-base44-api-key inválido ou ausente",
-      receivedKey,
-      expectedKey
-    });
+export default async function handler(req, res) {
+  // Apenas log para ver se a requisição chegou
+  console.log("Requisição recebida no cora-invoices");
+
+  const authHeader = req.headers["authorization"];
+  if (!authHeader) {
+    console.warn("Authorization header ausente");
   }
 
-  // --- CHECAGEM BÁSICA DE MTLS (simulação) ---
-  if (!process.env.CORA_CERTIFICATE || !process.env.CORA_PRIVATE_KEY) {
+  const cert = normalizePem(process.env.CORA_CERTIFICATE);
+  const key  = normalizePem(process.env.CORA_PRIVATE_KEY);
+
+  if (!cert || !key) {
     return res.status(500).json({ error: "mtls_not_configured" });
   }
 
-  const cert = process.env.CORA_CERTIFICATE;
-  const key = process.env.CORA_PRIVATE_KEY;
-
-  const agent = new https.Agent({ cert, key, rejectUnauthorized: true });
-
-  // --- RETORNO SIMULADO APENAS PARA TESTE ---
-  return res.status(200).json({
-    message: "Headers e payload recebidos com sucesso",
-    headers: req.headers,
-    body: req.body
+  const agent = new https.Agent({
+    cert,
+    key,
+    rejectUnauthorized: true,
   });
+
+  try {
+    const response = await fetch(
+      "https://api.stage.cora.com.br/v2/invoices",
+      {
+        method: "POST",
+        agent,
+        headers: {
+          "Authorization": authHeader || "",
+          "Content-Type": "application/json",
+          "Idempotency-Key": req.headers["idempotency-key"] || "test-key",
+        },
+        body: JSON.stringify(req.body),
+      }
+    );
+
+    const responseText = await response.text();
+    let responseBody;
+
+    try {
+      responseBody = JSON.parse(responseText);
+    } catch {
+      responseBody = responseText;
+    }
+
+    if (!response.ok) {
+      return res.status(response.status).json({
+        error: "cora_error",
+        details: responseBody,
+      });
+    }
+
+    return res.status(201).json(responseBody);
+
+  } catch (err) {
+    return res.status(500).json({
+      error: "internal_error",
+      message: err.message,
+    });
+  }
 }
