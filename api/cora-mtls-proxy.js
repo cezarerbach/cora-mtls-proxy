@@ -1,24 +1,14 @@
 import { Agent } from 'undici';
 
-/**
- * Normaliza PEM vindo de env
- */
 function normalizePem(pem) {
   if (!pem) return null;
   return pem.replace(/\\n/g, '\n').trim();
 }
 
-function validatePayload(payload) {
-  if (!payload) return 'Payload ausente';
-  if (!payload.url) return 'Campo obrigatório: url';
-  if (!payload.method) return 'Campo obrigatório: method';
-  return null;
-}
-
 export default async function handler(req, res) {
   try {
     /* =========================
-       🔐 Autenticação do proxy
+       🔐 Proxy authentication
        ========================= */
     const apiKey =
       req.headers['x-base44-api-key'] ||
@@ -35,69 +25,65 @@ export default async function handler(req, res) {
     /* =========================
        📦 Payload
        ========================= */
-    const payload = req.body;
-    const validationError = validatePayload(payload);
-    if (validationError) {
-      return res.status(400).json({ error: validationError });
-    }
+    const { url, method, headers = {}, body } = req.body || {};
 
-    const { url, method, headers = {}, body } = payload;
-
-    /* =========================
-       🔑 Certificados mTLS
-       ========================= */
-    const certificate = normalizePem(process.env.CORA_CERTIFICATE);
-    const privateKey = normalizePem(process.env.CORA_PRIVATE_KEY);
-
-    if (!certificate || !privateKey) {
-      return res.status(500).json({
-        error: 'Certificado ou chave privada não configurados'
+    if (!url || !method) {
+      return res.status(400).json({
+        error: 'Payload inválido. Campos obrigatórios: url, method'
       });
     }
 
-    /**
-     * 🚨 ESTE É O PONTO CRÍTICO
-     * mTLS FUNCIONA SOMENTE COM dispatcher (undici)
-     */
+    /* =========================
+       🔑 mTLS certificates
+       ========================= */
+    const cert = normalizePem(process.env.CORA_CERTIFICATE);
+    const key = normalizePem(process.env.CORA_PRIVATE_KEY);
+
+    if (!cert || !key) {
+      return res.status(500).json({
+        error: 'Certificado ou chave privada ausentes'
+      });
+    }
+
+    /* =========================
+       🚨 HTTP/2 + mTLS (ESSENCIAL)
+       ========================= */
     const dispatcher = new Agent({
+      allowH2: true,
       connect: {
-        cert: certificate,
-        key: privateKey,
-        rejectUnauthorized: true
+        cert,
+        key,
+        rejectUnauthorized: true,
+        alpnProtocols: ['h2']
       }
     });
 
     /* =========================
-       🧾 Body handling
-       ========================= */
-    let outgoingBody = body;
-
-    /* =========================
-       🚀 Forward mTLS REAL
+       🚀 Forward real
        ========================= */
     const response = await fetch(url, {
       method,
       headers,
-      body: outgoingBody,
-      dispatcher   // 👈 ESSENCIAL
+      body,
+      dispatcher
     });
 
-    const text = await response.text();
+    const raw = await response.text();
 
-    let responsePayload;
+    let parsed;
     try {
-      responsePayload = JSON.parse(text);
+      parsed = JSON.parse(raw);
     } catch {
-      responsePayload = text;
+      parsed = raw;
     }
 
-    return res.status(response.status).json(responsePayload);
+    return res.status(response.status).json(parsed);
 
-  } catch (error) {
-    console.error('CORA MTLS PROXY ERROR:', error);
+  } catch (err) {
+    console.error('CORA MTLS PROXY ERROR', err);
     return res.status(500).json({
       error: 'Erro interno no proxy mTLS',
-      message: error.message
+      message: err.message
     });
   }
 }
