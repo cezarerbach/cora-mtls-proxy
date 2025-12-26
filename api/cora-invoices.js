@@ -4,6 +4,21 @@ function normalizePem(pem) {
   if (!pem) return null;
   return pem.replace(/\\n/g, "\n").replace(/\r/g, "").trim();
 }
+export default async function handler(req, res) {
+
+  console.log('DEBUG ─ headers recebidos:', Object.keys(req.headers));
+
+  console.log(
+    'DEBUG ─ x-base44-api-key (length):',
+    req.headers['x-base44-api-key']?.length
+  );
+
+  console.log(
+    'DEBUG ─ BASE44_INTERMEDIARY_KEY (length):',
+    process.env.BASE44_INTERMEDIARY_KEY?.length
+  );
+
+  // 🔽 o restante do código continua aqui
 
 export default async function handler(req, res) {
   /* ===============================
