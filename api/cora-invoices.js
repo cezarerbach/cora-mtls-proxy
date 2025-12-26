@@ -1,5 +1,3 @@
-import https from "https";
-
 export default async function handler(req, res) {
   // 1️⃣ Log inicial
   console.log("Requisição recebida no cora-invoices");
@@ -17,9 +15,8 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: "unauthorized" });
   }
 
-  // 3️⃣ Log do Authorization header
-  const authHeader = req.headers["authorization"] || null;
-  console.log("Authorization header:", authHeader);
+  // 3️⃣ Log completo dos headers
+  console.log("Headers recebidos:", req.headers);
 
   // 4️⃣ Log do payload (JSON)
   let payload;
@@ -33,9 +30,8 @@ export default async function handler(req, res) {
 
   // 5️⃣ Resposta temporária de teste
   return res.status(200).json({
-    message: "Autenticação OK, logs gravados",
+    message: "Proxy acessado com sucesso, logs gravados",
     receivedApiKey,
-    authHeader,
     payload,
   });
 }
