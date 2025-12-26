@@ -1,5 +1,10 @@
 import https from 'https';
 
+function normalizePem(pem) {
+    if (!pem) return pem;
+    return pem.replace(/\\n/g, '\n').trim();
+}
+
 export default async function handler(req, res) {
     // Validar API key
     const apiKey = req.headers['x-base44-api-key'];
@@ -16,9 +21,9 @@ export default async function handler(req, res) {
         const accessToken = req.headers['authorization']?.replace('Bearer ', '');
         const idempotencyKey = req.headers['idempotency-key'];
 
-        // Usar certificados diretamente
-        const certificate = process.env.CORA_CERTIFICATE;
-        const privateKey = process.env.CORA_PRIVATE_KEY;
+        // Normalizar certificados
+        const certificate = normalizePem(process.env.CORA_CERTIFICATE);
+        const privateKey = normalizePem(process.env.CORA_PRIVATE_KEY);
 
         const httpsAgent = new https.Agent({
             cert: certificate,
@@ -26,7 +31,6 @@ export default async function handler(req, res) {
             rejectUnauthorized: true
         });
 
-        // Usar fetch global (Node.js 18+) ou nativo
         const response = await fetch('https://matls-clients.api.stage.cora.com.br/v2/invoices', {
             method: 'POST',
             headers: {
