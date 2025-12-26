@@ -1,8 +1,17 @@
 export default async function handler(req, res) {
     // API key interna
-   const apiKey = req.headers['x-base44-api-key'];
-   if (!apiKey || apiKey !== process.env.BASE44_INTERMEDIARY_KEY) {
-        return res.status(401).json({ error: 'Unauthorized' });
+export default async function handler(req, res) {
+    console.log('Headers received:', req.headers);
+    console.log('API Key from env:', process.env.BASE44_INTERMEDIARY_KEY);
+    console.log('API Key from header:', req.headers['x-base44-api-key']);
+    
+    const apiKey = req.headers['x-base44-api-key'];
+    if (!apiKey || apiKey !== process.env.BASE44_INTERMEDIARY_KEY) {
+        return res.status(401).json({ 
+            error: 'Unauthorized',
+            hasKey: !!apiKey,
+            hasEnvKey: !!process.env.BASE44_INTERMEDIARY_KEY
+        });
     }
 
     if (req.method !== 'POST') {
