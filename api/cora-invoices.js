@@ -1,59 +1,41 @@
-export default async function handler(req, res) {
-  return res.status(200).json({
-    receivedApiKey: req.headers["x-base44-api-key"] || null,
-    envApiKey: process.env.BASE44_INTERMEDIARY_KEY || null,
-    headers: req.headers,
 import https from "https";
 
 function normalizePem(pem) {
-  if (!pem) return null;
-  return pem.replace(/\\n/g, "\n").replace(/\r/g, "").trim();
+  return pem?.replace(/\\n/g, "\n").replace(/\r/g, "").trim();
 }
-export default async function handler(req, res) {
-
-  console.log('DEBUG ─ headers recebidos:', Object.keys(req.headers));
-
-  console.log(
-    'DEBUG ─ x-base44-api-key (length):',
-    req.headers['x-base44-api-key']?.length
-  );
-
-  console.log(
-    'DEBUG ─ BASE44_INTERMEDIARY_KEY (length):',
-    process.env.BASE44_INTERMEDIARY_KEY?.length
-  );
-
-  // 🔽 o restante do código continua aqui
 
 export default async function handler(req, res) {
-  /* ===============================
-     HARDENING BÁSICO
-  =============================== */
-
   if (req.method !== "POST") {
     return res.status(405).json({ error: "method_not_allowed" });
   }
 
-  if (req.headers["x-base44-api-key"] !== process.env.BASE44_API_KEY) {
+  /* ===============================
+     AUTH INTERMEDIÁRIO (BASE44)
+  =============================== */
+
+  const apiKey = req.headers["x-base44-api-key"];
+  if (!apiKey || apiKey !== process.env.BASE44_INTERMEDIARY_KEY) {
     return res.status(401).json({ error: "unauthorized" });
   }
 
-  const authHeader = req.headers["authorization"];
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(400).json({ error: "missing_bearer_token" });
+  /* ===============================
+     AUTH CORA
+  =============================== */
+
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).json({ error: "missing_authorization_header" });
   }
 
-  const idempotencyKey = req.headers["idempotency-key"];
-  if (!idempotencyKey) {
-    return res.status(400).json({ error: "missing_idempotency_key" });
-  }
+  const idempotencyKey =
+    req.headers["idempotency-key"] || crypto.randomUUID();
 
   /* ===============================
-     CERTIFICADOS mTLS
+     mTLS
   =============================== */
 
   const cert = normalizePem(process.env.CORA_CERTIFICATE);
-  const key  = normalizePem(process.env.CORA_PRIVATE_KEY);
+  const key = normalizePem(process.env.CORA_PRIVATE_KEY);
 
   if (!cert || !key) {
     return res.status(500).json({ error: "mtls_not_configured" });
@@ -84,24 +66,23 @@ export default async function handler(req, res) {
       }
     );
 
-    const responseText = await response.text();
-    let responseBody;
+    const text = await response.text();
+    let body;
 
     try {
-      responseBody = JSON.parse(responseText);
+      body = JSON.parse(text);
     } catch {
-      responseBody = responseText;
+      body = text;
     }
 
     if (!response.ok) {
       return res.status(response.status).json({
         error: "cora_error",
-        details: responseBody,
+        details: body,
       });
     }
 
-    return res.status(201).json(responseBody);
-
+    return res.status(201).json(body);
   } catch (err) {
     return res.status(500).json({
       error: "internal_error",
@@ -109,4 +90,3 @@ export default async function handler(req, res) {
     });
   }
 }
-
