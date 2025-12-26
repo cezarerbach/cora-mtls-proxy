@@ -2,14 +2,20 @@ import https from "https";
 
 export default async function handler(req, res) {
   try {
-    const {
-      CORA_CERTIFICATE,
-      CORA_PRIVATE_KEY,
-      CORA_CLIENT_ID,
-    } = process.env;
+    // ⚠️ CLIENT_ID FIXO PARA TESTE
+    const CLIENT_ID = "int-3Tm0ksVhvjxPI3JzglU95t";
 
-    if (!CORA_CERTIFICATE || !CORA_PRIVATE_KEY || !CORA_CLIENT_ID) {
-      return res.status(500).json({ error: "Missing env vars" });
+    const { CORA_CERTIFICATE, CORA_PRIVATE_KEY } = process.env;
+
+    if (!CORA_CERTIFICATE || !CORA_PRIVATE_KEY) {
+      console.error("ENV CHECK FAILED", {
+        hasCert: !!CORA_CERTIFICATE,
+        hasKey: !!CORA_PRIVATE_KEY,
+      });
+
+      return res.status(500).json({
+        error: "Missing certificate or private key",
+      });
     }
 
     const agent = new https.Agent({
@@ -19,8 +25,8 @@ export default async function handler(req, res) {
 
     const body = new URLSearchParams({
       grant_type: "client_credentials",
-      client_id: CORA_CLIENT_ID,
-    });
+      client_id: CLIENT_ID,
+    }).toString();
 
     const response = await fetch(
       "https://matls-clients.api.stage.cora.com.br/token",
@@ -36,9 +42,12 @@ export default async function handler(req, res) {
 
     const data = await response.json();
 
+    console.info("CORA RESPONSE STATUS", response.status);
+    console.info("CORA RESPONSE BODY", data);
+
     return res.status(response.status).json(data);
   } catch (err) {
     console.error("CORA TOKEN ERROR", err);
-    return res.status(500).json({ error: "Internal error" });
+    return res.status(500).json({ error: "Unexpected error" });
   }
 }
