@@ -1,63 +1,53 @@
 export default async function handler(req, res) {
-    // API key interna
-export default async function handler(req, res) {
-    console.log('Headers received:', req.headers);
-    console.log('API Key from env:', process.env.BASE44_INTERMEDIARY_KEY);
-    console.log('API Key from header:', req.headers['x-base44-api-key']);
-    
-    const apiKey = req.headers['x-base44-api-key'];
-    if (!apiKey || apiKey !== process.env.BASE44_INTERMEDIARY_KEY) {
-        return res.status(401).json({ 
-            error: 'Unauthorized',
-            hasKey: !!apiKey,
-            hasEnvKey: !!process.env.BASE44_INTERMEDIARY_KEY
-        }
-    }
-
-    if (req.method !== 'POST') {
-        return res.status(405).json({ error: 'Method not allowed' });
-    }
-
     try {
-        const boletoData = req.body;
-
-        const authHeader = req.headers['authorization'];
-        if (!authHeader?.startsWith('Bearer ')) {
-            return res.status(401).json({ error: 'Missing Bearer token' });
+        // Validar autenticação
+        const apiKey = req.headers['x-base44-api-key'];
+        if (!apiKey || apiKey !== process.env.BASE44_INTERMEDIARY_KEY) {
+            return res.status(401).json({ error: 'Unauthorized' });
         }
 
-        const accessToken = authHeader.replace('Bearer ', '');
-        const idempotencyKey = req.headers['idempotency-key'];
-
-        if (!idempotencyKey) {
-            return res.status(400).json({ error: 'Missing Idempotency-Key' });
+        // Função para normalizar PEM
+        function normalizePem(pem) {
+            return pem
+                .replace(/\\n/g, '\n')
+                .replace(/-----BEGIN [A-Z\s]+-----\s*/g, (match) => match.trim() + '\n')
+                .replace(/\s*-----END [A-Z\s]+-----/g, (match) => '\n' + match.trim());
         }
 
-        const response = await fetch(
-            'https://api.stage.cora.com.br/v2/invoices',
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Idempotency-Key': idempotencyKey
-                },
-                body: JSON.stringify(boletoData)
-            }
-        );
+        // Obter certificados das variáveis de ambiente
+        const cert = normalizePem(process.env.CORA_CERTIFICATE);
+        const key = normalizePem(process.env.CORA_PRIVATE_KEY);
 
-        const responseData = await response.json();
+        const https = await import('https');
+        const fetch = (await import('node-fetch')).default;
 
-        if (!response.ok) {
-            return res.status(response.status).json(responseData);
-        }
+        const agent = new https.Agent({
+            cert: cert,
+            key: key,
+            rejectUnauthorized: false
+        });
 
-        return res.status(201).json(responseData);
+        // Fazer requisição para Cora
+        const coraResponse = await fetch('https://matls-stage.cora.com.br/invoice', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': req.headers.authorization,
+                'Idempotency-Key': req.headers['idempotency-key']
+            },
+            body: JSON.stringify(req.body),
+            agent: agent
+        });
+
+        const data = await coraResponse.json();
+
+        return res.status(coraResponse.status).json(data);
 
     } catch (error) {
-        return res.status(500).json({
-            error: 'Internal server error',
-            message: error.message
+        console.error('Proxy error:', error);
+        return res.status(500).json({ 
+            error: error.message,
+            stack: error.stack 
         });
     }
 }
