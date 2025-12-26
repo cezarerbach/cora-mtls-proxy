@@ -8,7 +8,9 @@ export default async function handler(req, res) {
         console.log('Keys match:', req.headers['x-base44-api-key'] === process.env.BASE44_INTERMEDIARY_KEY);
         
         // Validar autenticação
-        const apiKey = req.headers['x-base44-api-key'];
+        // Validar autenticação
+        const apiKey = req.headers['x-base44-api-key'] || req.headers['X-Base44-Api-Key'];
+        
         if (!apiKey || apiKey !== process.env.BASE44_INTERMEDIARY_KEY) {
             console.error('UNAUTHORIZED: apiKey present?', !!apiKey, 'env key present?', !!process.env.BASE44_INTERMEDIARY_KEY);
             return res.status(401).json({ 
