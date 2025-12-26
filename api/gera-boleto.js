@@ -1,5 +1,4 @@
 import https from 'https';
-import fetch from 'node-fetch';
 
 export default async function handler(req, res) {
     // Validar API key
@@ -17,9 +16,9 @@ export default async function handler(req, res) {
         const accessToken = req.headers['authorization']?.replace('Bearer ', '');
         const idempotencyKey = req.headers['idempotency-key'];
 
-        // Configurar mTLS
-        const certificate = Buffer.from(process.env.CORA_CERTIFICATE_BASE64, 'base64').toString('utf-8');
-        const privateKey = Buffer.from(process.env.CORA_PRIVATE_KEY_BASE64, 'base64').toString('utf-8');
+        // Usar certificados diretamente
+        const certificate = process.env.CORA_CERTIFICATE;
+        const privateKey = process.env.CORA_PRIVATE_KEY;
 
         const httpsAgent = new https.Agent({
             cert: certificate,
@@ -27,6 +26,7 @@ export default async function handler(req, res) {
             rejectUnauthorized: true
         });
 
+        // Usar fetch global (Node.js 18+) ou nativo
         const response = await fetch('https://matls-clients.api.stage.cora.com.br/v2/invoices', {
             method: 'POST',
             headers: {
