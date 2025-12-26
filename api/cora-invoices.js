@@ -1,4 +1,5 @@
 import https from "https";
+import { URL } from "url";
 
 function normalizePem(pem) {
   return pem.replace(/\\n/g, "\n").replace(/\r/g, "").trim();
@@ -15,6 +16,7 @@ export default async function handler(req, res) {
 
   // Validação básica de ambiente
   if (!BASE44_API_KEY || !INVOICES_URL || !CERT || !KEY) {
+    console.error("Variáveis ausentes:", { BASE44_API_KEY: !!BASE44_API_KEY, INVOICES_URL: !!INVOICES_URL, CERT: !!CERT, KEY: !!KEY });
     return res.status(500).json({ error: "Configuração de ambiente ausente" });
   }
 
@@ -43,33 +45,62 @@ export default async function handler(req, res) {
   });
 
   try {
-    const response = await fetch(INVOICES_URL, {
+    const url = new URL(INVOICES_URL);
+    const postData = JSON.stringify(payload);
+
+    const options = {
+      hostname: url.hostname,
+      port: url.port || 443,
+      path: url.pathname + url.search,
       method: "POST",
-      agent,
       headers: {
         "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(postData),
         "Authorization": `Bearer ${accessToken}`,
         "Idempotency-Key": idempotencyKey,
-        "x-base44-api-key": BASE44_API_KEY,
       },
-      body: JSON.stringify(payload),
+      agent: agent,
+    };
+
+    const response = await new Promise((resolve, reject) => {
+      const request = https.request(options, (httpRes) => {
+        let data = "";
+
+        httpRes.on("data", (chunk) => {
+          data += chunk;
+        });
+
+        httpRes.on("end", () => {
+          resolve({
+            statusCode: httpRes.statusCode,
+            headers: httpRes.headers,
+            body: data,
+          });
+        });
+      });
+
+      request.on("error", (err) => {
+        reject(err);
+      });
+
+      request.write(postData);
+      request.end();
     });
 
-    const responseText = await response.text();
     let responseBody;
     try {
-      responseBody = JSON.parse(responseText);
+      responseBody = JSON.parse(response.body);
     } catch {
-      responseBody = responseText;
+      responseBody = response.body;
     }
 
-    if (!response.ok) {
+    if (response.statusCode >= 400) {
       console.error("Erro da Cora:", responseBody);
-      return res.status(response.status).json({ error: "cora_error", details: responseBody });
+      return res.status(response.statusCode).json({ error: "cora_error", details: responseBody });
     }
 
     console.log("Resposta da Cora recebida:", responseBody);
-    return res.status(201).json(responseBody);
+    return res.status(response.statusCode).json(responseBody);
 
   } catch (err) {
     console.error("Erro interno:", err);
