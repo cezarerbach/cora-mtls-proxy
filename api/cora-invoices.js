@@ -1,3 +1,8 @@
+export default async function handler(req, res) {
+  return res.status(200).json({
+    receivedApiKey: req.headers["x-base44-api-key"] || null,
+    envApiKey: process.env.BASE44_INTERMEDIARY_KEY || null,
+    headers: req.headers,
 import https from "https";
 
 function normalizePem(pem) {
