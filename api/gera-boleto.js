@@ -1,12 +1,5 @@
-import https from 'https';
-
-function normalizePem(pem) {
-    if (!pem) return pem;
-    return pem.replace(/\\n/g, '\n').trim();
-}
-
 export default async function handler(req, res) {
-    // Validar API key
+    // API key interna
     const apiKey = req.headers['x-base44-api-key'];
     if (!apiKey || apiKey !== process.env.BASE44_INTERMEDIARY_KEY) {
         return res.status(401).json({ error: 'Unauthorized' });
@@ -18,29 +11,31 @@ export default async function handler(req, res) {
 
     try {
         const boletoData = req.body;
-        const accessToken = req.headers['authorization']?.replace('Bearer ', '');
+
+        const authHeader = req.headers['authorization'];
+        if (!authHeader?.startsWith('Bearer ')) {
+            return res.status(401).json({ error: 'Missing Bearer token' });
+        }
+
+        const accessToken = authHeader.replace('Bearer ', '');
         const idempotencyKey = req.headers['idempotency-key'];
 
-        // Normalizar certificados
-        const certificate = normalizePem(process.env.CORA_CERTIFICATE);
-        const privateKey = normalizePem(process.env.CORA_PRIVATE_KEY);
+        if (!idempotencyKey) {
+            return res.status(400).json({ error: 'Missing Idempotency-Key' });
+        }
 
-        const httpsAgent = new https.Agent({
-            cert: certificate,
-            key: privateKey,
-            rejectUnauthorized: true
-        });
-
-        const response = await fetch('https://matls-clients.api.stage.cora.com.br/v2/invoices', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${accessToken}`,
-                'Idempotency-Key': idempotencyKey
-            },
-            body: JSON.stringify(boletoData),
-            agent: httpsAgent
-        });
+        const response = await fetch(
+            'https://api.stage.cora.com.br/v2/invoices',
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Idempotency-Key': idempotencyKey
+                },
+                body: JSON.stringify(boletoData)
+            }
+        );
 
         const responseData = await response.json();
 
@@ -48,9 +43,12 @@ export default async function handler(req, res) {
             return res.status(response.status).json(responseData);
         }
 
-        return res.status(200).json(responseData);
+        return res.status(201).json(responseData);
 
     } catch (error) {
-        return res.status(500).json({ error: error.message });
+        return res.status(500).json({
+            error: 'Internal server error',
+            message: error.message
+        });
     }
 }
