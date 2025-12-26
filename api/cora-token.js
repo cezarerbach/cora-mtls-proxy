@@ -1,5 +1,4 @@
 import https from "https";
-import axios from "axios";
 
 export default async function handler(req, res) {
   try {
@@ -13,33 +12,33 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Missing env vars" });
     }
 
-    const httpsAgent = new https.Agent({
+    const agent = new https.Agent({
       cert: CORA_CERTIFICATE,
       key: CORA_PRIVATE_KEY,
     });
 
-    const response = await axios.post(
+    const body = new URLSearchParams({
+      grant_type: "client_credentials",
+      client_id: CORA_CLIENT_ID,
+    });
+
+    const response = await fetch(
       "https://matls-clients.api.stage.cora.com.br/token",
-      new URLSearchParams({
-        grant_type: "client_credentials",
-        client_id: CORA_CLIENT_ID,
-      }).toString(),
       {
+        method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
         },
-        httpsAgent,
+        body,
+        agent,
       }
     );
 
-    return res.status(200).json(response.data);
-  } catch (error) {
-    if (error.response) {
-      return res
-        .status(error.response.status)
-        .json(error.response.data);
-    }
+    const data = await response.json();
 
-    return res.status(500).json({ error: "Unexpected error" });
+    return res.status(response.status).json(data);
+  } catch (err) {
+    console.error("CORA TOKEN ERROR", err);
+    return res.status(500).json({ error: "Internal error" });
   }
 }
