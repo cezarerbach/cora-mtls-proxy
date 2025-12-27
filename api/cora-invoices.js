@@ -13,7 +13,7 @@ export default async function handler(req, res) {
 
   try {
     const BASE44_API_KEY = process.env.BASE44_INTERMEDIARY_KEY;
-    const INVOICES_URL = "https://api.stage.cora.com.br/invoices";
+    const INVOICES_URL = process.env.VERCEL_CORA_INVOICES_URL;
     const CERT = process.env.CORA_CERTIFICATE;
     const KEY = process.env.CORA_PRIVATE_KEY;
 
